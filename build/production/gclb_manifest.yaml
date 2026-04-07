@@ -1,0 +1,47 @@
+name: stadium-global-lb
+description: "Global HTTP(S) Load Balancer for multi-region mapping"
+routing:
+  defaultService: backendServices/stadium-cloudrun-backend
+  hostRules:
+    - hosts: ["api.stadium-experience.com"]
+      pathMatcher: stadium-matcher
+  pathMatchers:
+    - name: stadium-matcher
+      defaultService: backendServices/stadium-cloudrun-backend
+
+# Cloud Armor DDoS & Advanced WAF Policy
+securityPolicy:
+  name: stadium-armor-defense
+  description: "DDoS Mitigation and Rate Limiting for high-profile matches"
+  rules:
+    # 1. Advanced Rate Limiting to prevent malicious spam
+    - action: deny(429)
+      description: "Rate limit: Block IPs exceeding 50 requests/sec natively"
+      match:
+        versionedExpr: SRC_IPS_V1
+        config:
+          srcIpRanges: ["*"]
+      rateLimitOptions:
+        conformAction: allow
+        exceedAction: deny(429)
+        rateLimitThreshold:
+          count: 50
+          intervalSec: 1
+    # 2. Defense-in-Depth blocklists isolating standard CVEs
+    - action: deny(403)
+      description: "Block specific advanced threat signatures (SQLi, XSS)"
+      match:
+        expr:
+          expression: "evaluatePreconfiguredExpr('xss-stable') || evaluatePreconfiguredExpr('sqli-stable')"
+
+backendServices:
+  - name: stadium-cloudrun-backend
+    protocol: HTTPS
+    loadBalancingScheme: EXTERNAL_MANAGED
+    securityPolicy: stadium-armor-defense
+    # Enable Cloud CDN for caching static payloads dynamically reducing latency bounds natively.
+    enableCDN: true 
+    backends:
+      # Network Endpoint Groups mapped regionally simulating Multi-Region failover architecture
+      - group: networkEndpointGroups/stadium-cloudrun-neg-us-central
+      - group: networkEndpointGroups/stadium-cloudrun-neg-eu-west

@@ -1,0 +1,84 @@
+{
+  "info": {
+    "name": "Stadium Experience Platform V1",
+    "description": "Production endpoints strictly mapping Hexagonal Route Services logically executing via Ephemeral Redis boundaries natively.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Telemetry Ingest (Hot Path)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{auth_token}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"zone_id\": \"section-104\",\n  \"density\": 0.85,\n  \"timestamp\": \"2026-04-07T22:00:00Z\"\n}"
+        },
+        "url": {
+          "raw": "https://stadium-experience-backend-xyz123-uc.a.run.app/v1/telemetry/ingest",
+          "protocol": "https",
+          "host": [
+            "stadium-experience-backend-xyz123-uc",
+            "a",
+            "run",
+            "app"
+          ],
+          "path": [
+            "v1",
+            "telemetry",
+            "ingest"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Zone Heatmap",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{auth_token}}"
+          }
+        ],
+        "url": {
+          "raw": "https://stadium-experience-backend-xyz123-uc.a.run.app/v1/crowd/heatmap?zone=section-104",
+          "protocol": "https",
+          "host": [
+            "stadium-experience-backend-xyz123-uc",
+            "a",
+            "run",
+            "app"
+          ],
+          "path": [
+            "v1",
+            "crowd",
+            "heatmap"
+          ],
+          "query": [
+            {
+              "key": "zone",
+              "value": "section-104"
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "auth_token",
+      "value": "REPLACE_WITH_GCLOUD_IAP_TOKEN",
+      "type": "string"
+    }
+  ]
+}

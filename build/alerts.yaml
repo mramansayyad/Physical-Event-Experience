@@ -1,0 +1,16 @@
+displayName: "CRITICAL: Syncer Daemon Flush Failure"
+combiner: "OR"
+conditions:
+  - displayName: "Redis Buffer Stagnation (> 10s)"
+    conditionThreshold:
+      # Validating Cloud Run Job 'stadium-syncer-job' completions strictly globally.
+      filter: "metric.type=\"run.googleapis.com/job/completed_execution_count\" resource.type=\"cloud_run_job\" metric.label.\"job_name\"=\"stadium-syncer-job\""
+      comparison: "COMPARISON_LT"
+      thresholdValue: 1 # Requires natively 1 successful execution cycle per 10s window.
+      duration: "10s"
+      aggregations:
+        - alignmentPeriod: "10s"
+          crossSeriesReducer: "REDUCE_SUM"
+          perSeriesAligner: "ALIGN_COUNT"
+notificationChannels:
+  - "projects/stadium-experience-loc/notificationChannels/pagerduty-tier-1-eng"

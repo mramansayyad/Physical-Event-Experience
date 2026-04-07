@@ -1,0 +1,8 @@
+.env
+bin/
+obj/
+vendor/
+.agents/
+build/production/infrastructure/terraform/.terraform/
+*.exe
+*.test

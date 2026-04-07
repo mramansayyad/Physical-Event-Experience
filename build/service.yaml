@@ -1,0 +1,49 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: stadium-experience-backend
+  labels:
+    cloud.googleapis.com/location: us-central1
+spec:
+  template:
+    metadata:
+      annotations:
+        # Prevent cold starts from dropping during halftime spikes
+        autoscaling.knative.dev/minScale: "2"
+        autoscaling.knative.dev/maxScale: "100"
+        # Ensure Pub/Sub background goroutines can safely flush/ack
+        run.googleapis.com/cpu-throttling: "false"
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      containers:
+      - image: gcr.io/virtual-promptwars-stadium/stadium-api:latest
+        ports:
+        - containerPort: 8080
+        env:
+        - name: GOOGLE_CLOUD_PROJECT
+          value: "stadium-experience-loc"
+        # Database & Event configs
+        - name: FIRESTORE_COLLECTION
+          value: "heatmaps"
+        - name: PUBSUB_TOPIC
+          value: "telemetry-stream"
+        - name: REDIS_HOST
+          value: "10.0.0.5" # Internal VPC Connector Endpoint
+        - name: REDIS_PORT
+          value: "6379"
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        readinessProbe:
+          httpGet: # Cloud-native hook verifying VPC/Redis mapping
+            path: /redis-health
+            port: 8080
+          periodSeconds: 5
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "512Mi"

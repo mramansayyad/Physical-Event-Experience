@@ -1,0 +1,36 @@
+[
+  {
+    "name": "match_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Unique identifier tying telemetry to explicit events/matches."
+  },
+  {
+    "name": "timestamp",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED",
+    "description": "UTC execution bound mapping time-series logic natively."
+  },
+  {
+    "name": "device_id",
+    "type": "STRING",
+    "mode": "REQUIRED",
+    "description": "Anonymized token securely matching fan pathways."
+  },
+  {
+    "name": "latitude",
+    "type": "FLOAT",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "longitude",
+    "type": "FLOAT",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "zone_id",
+    "type": "STRING",
+    "mode": "NULLABLE",
+    "description": "Geospatially resolved structural sector."
+  }
+]
