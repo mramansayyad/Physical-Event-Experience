@@ -1,23 +1,39 @@
-# Physical Event Experience: Real-Time Stadium Mesh
-**Founder & CEO:** Aman Sayyad | **Engineering Team:** Aman Tech Innovations
+# Physical Event Experience Platform 🏟️
 
-## 🚀 Overview
-A high-performance, hexagonal-architecture backend built in **Go 1.25** and deployed on **Google Cloud Run**. This platform processes real-time fan telemetry to generate live crowd heatmaps and automated rerouting logic for stadium events.
+### **Architectural Mesh for High-Concurrency Stadium Intelligence**
+**Engineering Lead:** Aman Sayyad, Founder & CEO, Aman Tech Innovations  
+**Version:** `v1.1.0-SECURED` (Hardened)  
+**Tech Stack:** Go 1.25.9, Google Cloud Run, Redis, Firestore, Docker (Distroless)
 
-## 🏆 Evaluation Criteria Alignment
-- **Code Quality:** Implements Hexagonal Architecture (Ports & Adapters) for 100% decoupling.
-- **Security:** Containerized via Docker (Debian-Slim) and managed via GCP IAM.
-- **Efficiency:** Optimized for high concurrency using Go routines and Serverless scaling.
-- **Testing:** Unit-tested domain logic in `routing_service_test.go`.
-- **Accessibility:** Standardized JSON Discovery endpoints for easy integration.
-- **Google Services:** Fully integrated with Cloud Run, Cloud Build, and Artifact Registry.
+---
 
-## 🛠️ Tech Stack
-- **Language:** Go 1.25 (Latest Toolchain)
-- **Infrastructure:** Google Cloud Platform (GCP)
-- **Deployments:** Cloud Run (Serverless) natively decoupled over Docker (Multi-stage)
+## 🏗️ 10x Engineering Architecture
+This platform implements a **Hexagonal Serverless Mesh** (Ports & Adapters) to ensure complete decoupling of business logic from infrastructure.
 
-## 🛡️ Production Architecture (10x Hardened)
-- **Zero-Trust CI/CD Automation:** Validated natively via GitHub Actions scanning (`govulncheck`) and Sandbox Table-Driven test pipelines against mocked Hexagon adapters.
-- **Diagnostics & Pod Probing:** Exposes decoupled `/healthz` and explicit `/readyz` endpoints executing deterministic network validations against DB adapters. Pprof metrics are securely routed internally via port `6060`.
-- **Graceful Shutdown Bounds:** Native intercepted Signals block shutdown operations executing hard pauses (`sync.WaitGroup`) strictly until the telemetry Worker Pools conclude processing memory channels.
+* **Core Domain:** Isolated logic for crowd heatmap calculation and real-time gate rerouting.
+* **Adapters:** High-performance implementations for GCP Firestore and Redis with connection pooling.
+* **Transport:** Hardened HTTP layer with "Always-Fail" validation logic.
+
+## 🛡️ Security & Zero-Trust Profile
+* **Hardened Runtime:** Deployed using **Google Distroless (Non-Root)** images to minimize the attack surface.
+* **Vulnerability Scanning:** Automated **SecOps Sweep** via `govulncheck` integrated into the CI/CD pipeline.
+* **Secret Management:** Zero use of `.env` files in production; all credentials are dynamically fetched from **GCP Secret Manager**.
+* **Patch Management:** Fully patched against critical standard library vulnerabilities (GO-2026-4870, 4865, 4947, 4946) by enforcing **Go 1.25.9**.
+
+## ⚡ Performance & Efficiency
+* **Circuit Breakers:** Implemented `sony/gobreaker` patterns to prevent cascading failures during database latency spikes.
+* **Connection Pooling:** Optimized Redis buffers with a pool size of 100 to handle massive telemetry surges.
+* **Worker Pools:** Concurrency-safe telemetry processing using buffered channels to prevent OOM (Out of Memory) events.
+
+## 📊 Observability & Reliability
+* **Probing:** Native `/healthz` (Liveness) and `/readyz` (Readiness) endpoints for automated cloud self-healing.
+* **Graceful Shutdown:** Interception of `SIGTERM` signals to ensure zero data loss for inflight telemetry during deployments.
+* **Structured Logging:** JSON-based logging mapped to GCP Cloud Logging severity levels.
+* **Tracing:** OpenTelemetry integration for sub-second request tracing across the hexagonal mesh.
+
+## 🚀 Deployment
+Deployed on **Google Cloud Run** using a multi-stage Docker build for millisecond cold starts and infinite auto-scaling.
+
+```bash
+# Production Deployment Sequence
+gcloud run deploy stadium-backend --source . --region us-central1 --allow-unauthenticated
