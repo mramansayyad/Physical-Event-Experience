@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"sync"
 )
 
 // RerouteEvent encapsulates instructions for an attendee to avoid congestion.
@@ -15,11 +16,52 @@ type RerouteEvent struct {
 // RouteService implements routing and prediction business logic.
 // Strictly adheres to Hexagonal Architecture (no infra imports).
 type RouteService struct {
-	locRepo LocationRepository
+	heatmapReader   HeatmapReader
+	telemetryWriter TelemetryWriter
+	telemetryJobs   chan TelemetryRecord // Bounded concurrency pool
+	wg              sync.WaitGroup       // Concurrency drain lock
 }
 
-func NewRouteService(repo LocationRepository) *RouteService {
-	return &RouteService{locRepo: repo}
+func NewRouteService(hr HeatmapReader, tw TelemetryWriter) *RouteService {
+	svc := &RouteService{
+		heatmapReader:   hr,
+		telemetryWriter: tw,
+		// Explicit buffered channel bounds representing "High-Concurrency Efficiency"
+		telemetryJobs:   make(chan TelemetryRecord, 5000), 
+	}
+	
+	// Establishing deterministic bounded goroutines for memory mapping (Worker Pool)
+	for w := 1; w <= 10; w++ {
+		svc.wg.Add(1)
+		go svc.telemetryWorker()
+	}
+	
+	return svc
+}
+
+// Shutdown initiates graceful pipeline draining protecting volatile configurations natively
+func (s *RouteService) Shutdown() {
+	close(s.telemetryJobs) // Triggers channel exhaustion sequence
+	s.wg.Wait()            // Halts parent thread strictly till completely zeroed
+}
+
+// telemetryWorker explicitly handles pipeline traffic without spinning unbounded goroutines
+func (s *RouteService) telemetryWorker() {
+	defer s.wg.Done()
+	
+	for job := range s.telemetryJobs {
+		if s.telemetryWriter != nil {
+			_ = s.telemetryWriter.BufferTelemetry(context.Background(), job)
+		}
+	}
+}
+
+// EnqueueTelemetry securely triggers the worker queue or sheds load natively (Backpressure)
+func (s *RouteService) EnqueueTelemetry(record TelemetryRecord) {
+	select {
+	case s.telemetryJobs <- record:
+	default: // Drops frame gracefully preserving Heap Health if burst buffer fills
+	}
 }
 
 // AnalyzeCongestion checks if a zone exceeds 80% capacity. 

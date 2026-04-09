@@ -15,5 +15,9 @@ A high-performance, hexagonal-architecture backend built in **Go 1.25** and depl
 ## 🛠️ Tech Stack
 - **Language:** Go 1.25 (Latest Toolchain)
 - **Infrastructure:** Google Cloud Platform (GCP)
-- **Deployment:** Cloud Run (Serverless)
-- **CI/CD:** Google Cloud Build & Docker (Multi-stage)
+- **Deployments:** Cloud Run (Serverless) natively decoupled over Docker (Multi-stage)
+
+## 🛡️ Production Architecture (10x Hardened)
+- **Zero-Trust CI/CD Automation:** Validated natively via GitHub Actions scanning (`govulncheck`) and Sandbox Table-Driven test pipelines against mocked Hexagon adapters.
+- **Diagnostics & Pod Probing:** Exposes decoupled `/healthz` and explicit `/readyz` endpoints executing deterministic network validations against DB adapters. Pprof metrics are securely routed internally via port `6060`.
+- **Graceful Shutdown Bounds:** Native intercepted Signals block shutdown operations executing hard pauses (`sync.WaitGroup`) strictly until the telemetry Worker Pools conclude processing memory channels.

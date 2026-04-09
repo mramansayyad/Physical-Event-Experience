@@ -11,13 +11,13 @@ type Heatmap struct {
 
 // Location represents geographical coordinates within the stadium.
 type Location struct {
-	Latitude  float64
-	Longitude float64
+	Latitude  float64 `json:"latitude" validate:"required"`
+	Longitude float64 `json:"longitude" validate:"required"`
 }
 
 // TelemetryRecord holds individual data points for foot traffic ingestion.
 type TelemetryRecord struct {
-	DeviceID  string
-	Location  Location
-	Timestamp time.Time
+	DeviceID  string    `json:"device_id" validate:"required"`
+	Location  Location  `json:"location" validate:"required"`
+	Timestamp time.Time `json:"timestamp" validate:"required"`
 }

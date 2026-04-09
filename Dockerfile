@@ -1,28 +1,27 @@
-# Use the latest possible Go 1.25 image
-FROM golang:1.25-bookworm AS builder
+# Build Stage
+FROM golang:1.25.0-alpine AS builder
 
-# Install build essentials
-RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+# Enable CGO_ENABLED=0 for static binaries
+ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOTOOLCHAIN=go1.25.0
 
 WORKDIR /app
 
-# Force the Go toolchain to auto-upgrade to 1.25 if needed
-ENV GOTOOLCHAIN=go1.25.0
+# Optimize caching of go.mod / go.sum
+COPY go.mod go.sum ./
+RUN go mod download && go mod verify
 
-# Copy everything
 COPY . .
 
-# Clean dependencies - this is where the 1.25 requirement was failing
-RUN rm -f go.sum
-RUN go mod tidy
+# Build the binary statically, stripping symbols to reduce size and obfuscate
+RUN go build -ldflags="-s -w" -o /stadium-backend ./cmd/api/*.go
 
-# Build the binary
-RUN go build -v -o /stadium-backend ./cmd/api/*.go
+# Final Stage (Distroless for Zero-Trust)
+# Uses a minimal base with NO shell or package managers.
+FROM gcr.io/distroless/static-debian12:nonroot
 
-# STEP 2: Final Image (Standard Debian Slim for maximum compatibility)
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
-WORKDIR /
+# Use the non-root user predefined in the distroless image
+USER nonroot:nonroot
+
 COPY --from=builder /stadium-backend /stadium-backend
 
 ENV PORT=8080

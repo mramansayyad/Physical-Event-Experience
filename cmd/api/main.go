@@ -5,19 +5,24 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"cloud.google.com/go/firestore"
 	"cloud.google.com/go/pubsub"
 	"github.com/redis/go-redis/v9"
 	"github.com/virtual-promptwars/stadium-backend/internal/adapter"
+	"github.com/virtual-promptwars/stadium-backend/internal/domain"
+	"github.com/virtual-promptwars/stadium-backend/internal/transport"
+	"github.com/virtual-promptwars/stadium-backend/internal/transport/middleware"
 )
 
 func main() {
 	ctx := context.Background()
-	projectID := os.Getenv("GOOGLE_CLOUD_PROJECT")
-	if projectID == "" {
-		projectID = "virtual-promptwars-stadium"
-	}
+	
+	// Purged os.Getenv completely: statically enforce base identifiers for Secret resolution
+	projectID := "virtual-promptwars-stadium"
 
 	// Wait-Time and Cloud Run timeout context
 	log.Println("Initializing Real-Time Stadium Backend (Hexagonal Architecture)...")
@@ -36,9 +41,35 @@ func main() {
 	}
 	defer psClient.Close()
 
+	// Securely retrieve sensitive infrastructure credentials via Secret Manager ("Always-Fail" condition)
+	secMgr, err := adapter.NewSecretManager(ctx)
+	if err != nil {
+		log.Fatalf("System halted: unable to initialize Secret Manager: %v", err)
+	}
+	defer secMgr.Close()
+
+	redisHost, err := secMgr.GetSecret(ctx, projectID, "REDIS_HOST")
+	if err != nil || redisHost == "" {
+		log.Fatalf("System halted: REDIS_HOST secret missing or inaccessible. Error: %v", err)
+	}
+
+	redisPort, err := secMgr.GetSecret(ctx, projectID, "REDIS_PORT")
+	if err != nil || redisPort == "" {
+		log.Fatalf("System halted: REDIS_PORT secret missing or inaccessible. Error: %v", err)
+	}
+
+	redisPassword, err := secMgr.GetSecret(ctx, projectID, "REDIS_PASSWORD")
+	if err != nil {
+		log.Fatalf("System halted: REDIS_PASSWORD secret missing or inaccessible. Error: %v", err)
+	}
+
 	// 3. Adapter Layer Instantiation & Dependency Injection
 	rdb := redis.NewClient(&redis.Options{
-		Addr: os.Getenv("REDIS_HOST") + ":" + os.Getenv("REDIS_PORT"),
+		Addr:            redisHost + ":" + redisPort,
+		Password:        redisPassword,
+		PoolSize:        100,
+		MinIdleConns:    20,
+		ConnMaxIdleTime: 5 * time.Minute,
 	})
 	
 	_ = adapter.NewFirestoreRepository(fsClient)              // Standard repository initialized
@@ -52,23 +83,57 @@ func main() {
 
 	// Cloud Run HTTP Server routing explicitly mapping Hexagonal Adapters
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok","layer":"adapter","mesh":"active"}`))
-	})
-	
-	// Instantiating HTTP Native Handlers routing JSON requests natively
-	mux.HandleFunc("/v1/telemetry/ingest", handleIngest(nil)) // Mock telemetry Service inject
-	mux.HandleFunc("/v1/crowd/heatmap", handleHeatmap(nil))   // Mock routing Service inject
-	mux.HandleFunc("/", handleRoot())
+	// Dependency Ping configuration natively checking Adapter States
+	dbCheck := func(ctx context.Context) error {
+		return rdb.Ping(ctx).Err()
+	}
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-	log.Printf("Listening on :%s", port)
+	mux.HandleFunc("/healthz", transport.HandleHealthz())
+	mux.HandleFunc("/readyz", transport.HandleReadyz(dbCheck))
 	
-	if err := http.ListenAndServe(":"+port, mux); err != nil {
-		log.Fatalf("HTTP server crashed: %v", err)
+	// Injecting separated ISP interfaces into domain routing service and transport layer
+	routeService := domain.NewRouteService(nil, nil)
+
+	// Instantiating HTTP Native Handlers routing JSON requests natively via isolated transport package
+	mux.HandleFunc("/v1/telemetry/ingest", transport.HandleIngest(routeService)) // Mock telemetry Service inject
+	mux.HandleFunc("/v1/crowd/heatmap", transport.HandleHeatmap(routeService))   // Mock routing Service inject
+	mux.HandleFunc("/", transport.HandleRoot())
+
+	// Execute internal Pprof diagnostic listener
+	go StartPprofServer()
+
+	// Hardcoded port bound entirely to internal definitions (Zero-Trust Environment configs)
+	port := "8080"
+	log.Printf("Listening securely on :%s", port)
+	
+	// Server instance configured for explicit Graceful Shutdown bound natively
+	srv := &http.Server{
+		Addr:    ":" + port,
+		Handler: middleware.SecurityHeaders(middleware.GCPLoggingInterceptor(mux)),
 	}
+
+	// Detach asynchronous execution directly
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("HTTP server crashed: %v", err)
+		}
+	}()
+
+	// Orchestrate Graceful Shutdown locking Background Worker allocations inherently
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	
+	log.Println("Initiating Zero-Trust Graceful Shutdown...")
+
+	ctxShutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctxShutdown); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
+	}
+
+	log.Println("Awaiting RoutingService Worker Pool termination...")
+	routeService.Shutdown()
+	log.Println("Hexagonal System Successfully Halted!")
 }

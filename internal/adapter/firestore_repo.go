@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"cloud.google.com/go/firestore"
+	"github.com/sony/gobreaker"
 	"github.com/virtual-promptwars/stadium-backend/internal/domain"
 	"google.golang.org/api/iterator"
 
@@ -18,10 +19,20 @@ const tracerName = "stadium-backend/adapter"
 
 type FirestoreRepository struct {
 	client *firestore.Client
+	cb     *gobreaker.CircuitBreaker
 }
 
 func NewFirestoreRepository(client *firestore.Client) *FirestoreRepository {
-	return &FirestoreRepository{client: client}
+	st := gobreaker.Settings{
+		Name:        "FirestoreRepo",
+		MaxRequests: 5,
+		Interval:    15 * time.Second,
+		Timeout:     15 * time.Second,
+	}
+	return &FirestoreRepository{
+		client: client,
+		cb:     gobreaker.NewCircuitBreaker(st),
+	}
 }
 
 // UpdateUserLocation saves the latest coordinates.
@@ -30,14 +41,18 @@ func (r *FirestoreRepository) UpdateUserLocation(ctx context.Context, userID str
 	span.SetAttributes(attribute.String("user_id", userID))
 	defer span.End()
 
-	docRef := r.client.Collection("locations").Doc(userID)
-	
-	_, err := docRef.Set(ctx, map[string]interface{}{
-		"Latitude":  loc.Latitude,
-		"Longitude": loc.Longitude,
-		"Timestamp": time.Now(),
-		"TTL":       time.Now().Add(5 * time.Minute), 
-	}, firestore.MergeAll)
+	_, err := r.cb.Execute(func() (interface{}, error) {
+		docRef := r.client.Collection("locations").Doc(userID)
+		
+		_, opErr := docRef.Set(ctx, map[string]interface{}{
+			"Latitude":  loc.Latitude,
+			"Longitude": loc.Longitude,
+			"Timestamp": time.Now(),
+			"TTL":       time.Now().Add(5 * time.Minute), 
+		}, firestore.MergeAll)
+		
+		return nil, opErr
+	})
 	
 	return err
 }
@@ -48,45 +63,54 @@ func (r *FirestoreRepository) GetZoneTelemetry(ctx context.Context, zoneID strin
 	span.SetAttributes(attribute.String("zone_id", zoneID))
 	defer span.End()
 
-	var records []domain.TelemetryRecord
-	staleThreshold := time.Now().Add(-5 * time.Minute)
-	
-	iter := r.client.Collection("telemetry").
-		Where("ZoneID", "==", zoneID).
-		Where("Timestamp", ">=", staleThreshold).
-		Documents(ctx)
-	defer iter.Stop()
+	res, err := r.cb.Execute(func() (interface{}, error) {
+		var records []domain.TelemetryRecord
+		staleThreshold := time.Now().Add(-5 * time.Minute)
+		
+		iter := r.client.Collection("telemetry").
+			Where("ZoneID", "==", zoneID).
+			Where("Timestamp", ">=", staleThreshold).
+			Documents(ctx)
+		defer iter.Stop()
 
-	for {
-		doc, err := iter.Next()
-		if err == iterator.Done {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to iterate telemetry docs: %v", err)
+		for {
+			doc, err := iter.Next()
+			if err == iterator.Done {
+				break
+			}
+			if err != nil {
+				return nil, fmt.Errorf("failed to iterate telemetry docs: %v", err)
+			}
+			
+			var raw struct {
+				DeviceID  string    `firestore:"DeviceID"`
+				Latitude  float64   `firestore:"Latitude"`
+				Longitude float64   `firestore:"Longitude"`
+				Timestamp time.Time `firestore:"Timestamp"`
+			}
+			if err := doc.DataTo(&raw); err != nil {
+				continue
+			}
+			
+			records = append(records, domain.TelemetryRecord{
+				DeviceID: raw.DeviceID,
+				Location: domain.Location{
+					Latitude:  raw.Latitude,
+					Longitude: raw.Longitude,
+				},
+				Timestamp: raw.Timestamp,
+			})
 		}
 		
-		var raw struct {
-			DeviceID  string    `firestore:"DeviceID"`
-			Latitude  float64   `firestore:"Latitude"`
-			Longitude float64   `firestore:"Longitude"`
-			Timestamp time.Time `firestore:"Timestamp"`
-		}
-		if err := doc.DataTo(&raw); err != nil {
-			continue
-		}
-		
-		records = append(records, domain.TelemetryRecord{
-			DeviceID: raw.DeviceID,
-			Location: domain.Location{
-				Latitude:  raw.Latitude,
-				Longitude: raw.Longitude,
-			},
-			Timestamp: raw.Timestamp,
-		})
+		return records, nil
+	})
+
+	if err != nil {
+		span.AddEvent("CircuitBreaker_GetZoneTelemetry_FallbackTriggered")
+		return []domain.TelemetryRecord{}, nil // Return cached/default bounds to prevent upstream exhaustion
 	}
 	
-	return records, nil
+	return res.([]domain.TelemetryRecord), nil
 }
 
 // BatchUpdateHeatmaps uses nested spans and batch writes.
