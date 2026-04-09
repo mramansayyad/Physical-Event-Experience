@@ -1,8 +1,8 @@
 # Build Stage
-FROM golang:1.25.0-alpine AS builder
+FROM golang:1.25.9-alpine AS builder
 
 # Enable CGO_ENABLED=0 for static binaries
-ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOTOOLCHAIN=go1.25.0
+ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOTOOLCHAIN=go1.25.9
 
 WORKDIR /app
 
