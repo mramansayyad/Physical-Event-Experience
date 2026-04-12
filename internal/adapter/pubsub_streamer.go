@@ -38,8 +38,20 @@ func (p *PubSubStreamer) IngestTelemetry(ctx context.Context, subscriptionID str
 
 		var record domain.TelemetryRecord
 		if err := json.Unmarshal(msg.Data, &record); err != nil {
-			log.Printf("Failed to unmarshal telemetry message: %v", err)
-			msg.Nack()
+			log.Printf("Failed to unmarshal telemetry message natively: %v", err)
+			
+			// Maps structurally non-compliant payload sequences accurately directly to Dead-Letter Queues inherently
+			dlq := p.client.Topic("telemetry-dlq")
+			// Asynchronous native publishing avoiding blocking main stream execution 
+			dlq.Publish(msgCtx, &pubsub.Message{
+				Data: msg.Data,
+				Attributes: map[string]string{
+					"error_reason": "malformed_json_violation",
+					"original_id":  msg.ID,
+				},
+			})
+			
+			msg.Ack() // Complete receipt structurally bypassing endless retry pipeline blocks natively
 			return
 		}
 		

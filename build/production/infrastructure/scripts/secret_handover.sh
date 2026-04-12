@@ -15,11 +15,11 @@ echo -n $REDIS_PORT | gcloud secrets create stadium-redis-port --data-file=- --r
 
 # Lock specific runtime access explicitly allocating Cloud Run execution Service Account perfectly restricting unauthorized views
 gcloud secrets add-iam-policy-binding stadium-redis-host \
-    --member="serviceAccount:stadium-runner@stadium-experience-loc.iam.gserviceaccount.com" \
+    --member="serviceAccount:stadium-runner@virtual-promptwars-492614.iam.gserviceaccount.com" \
     --role="roles/secretmanager.secretAccessor"
 
 gcloud secrets add-iam-policy-binding stadium-redis-port \
-    --member="serviceAccount:stadium-runner@stadium-experience-loc.iam.gserviceaccount.com" \
+    --member="serviceAccount:stadium-runner@virtual-promptwars-492614.iam.gserviceaccount.com" \
     --role="roles/secretmanager.secretAccessor"
 
 echo "Variables securely injected masking plain-text states completely."

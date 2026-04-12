@@ -113,29 +113,79 @@ func (r *FirestoreRepository) GetZoneTelemetry(ctx context.Context, zoneID strin
 	return res.([]domain.TelemetryRecord), nil
 }
 
-// BatchUpdateHeatmaps uses nested spans and batch writes.
+// BatchUpdateHeatmaps uses nested spans and batch writes mapped into explicit safe 500 document limit fragments natively.
 func (r *FirestoreRepository) BatchUpdateHeatmaps(ctx context.Context, heatmaps []domain.Heatmap) error {
 	ctx, span := otel.Tracer(tracerName).Start(ctx, "Firestore.BatchUpdateHeatmaps")
 	span.SetAttributes(attribute.Int("batch_size", len(heatmaps)))
 	defer span.End()
 
-	batch := r.client.Batch()
-	
-	for _, hm := range heatmaps {
-		docRef := r.client.Collection("heatmaps").Doc(hm.ZoneID)
-		batch.Set(docRef, map[string]interface{}{
-			"DensityLevel": hm.DensityLevel,
-			"Timestamp":    hm.Timestamp,
-			"TTL":          time.Now().Add(10 * time.Minute),
-		}, firestore.MergeAll)
+	const batchSize = 500
+	var batches []func() error
+
+	for i := 0; i < len(heatmaps); i += batchSize {
+		end := i + batchSize
+		if end > len(heatmaps) {
+			end = len(heatmaps)
+		}
+		chunk := heatmaps[i:end]
 		
-		// Record exact zone updates into OTEL for the specific Heatmap
-		span.AddEvent("HeatmapProcessed", trace.WithAttributes(
-			attribute.String("zone_id", hm.ZoneID),
-			attribute.Float64("density", hm.DensityLevel),
-		))
+		batches = append(batches, func() error {
+			batch := r.client.Batch()
+			for _, hm := range chunk {
+				docRef := r.client.Collection("heatmaps").Doc(hm.ZoneID)
+				batch.Set(docRef, map[string]interface{}{
+					"DensityLevel": hm.DensityLevel,
+					"Timestamp":    hm.Timestamp,
+					"TTL":          time.Now().Add(10 * time.Minute),
+				}, firestore.MergeAll)
+				
+				span.AddEvent("HeatmapProcessed", trace.WithAttributes(
+					attribute.String("zone_id", hm.ZoneID),
+					attribute.Float64("density", hm.DensityLevel),
+				))
+			}
+			_, err := batch.Commit(ctx)
+			return err
+		})
 	}
 	
-	_, err := batch.Commit(ctx)
-	return err
+	// Execute the structured mapping synchronously preventing partial drops
+	for _, commitBatch := range batches {
+		if err := commitBatch(); err != nil {
+			return err // Return immediate error mapping cleanly triggering circuit fallback logic upstream inherently
+		}
+	}
+	return nil
+}
+
+// GetZoneHeatmap strictly resolves the HeatmapReader port definition natively
+func (r *FirestoreRepository) GetZoneHeatmap(ctx context.Context, zoneID string) (domain.Heatmap, error) {
+	doc, err := r.client.Collection("heatmaps").Doc(zoneID).Get(ctx)
+	if err != nil {
+		return domain.Heatmap{}, err
+	}
+	var hm domain.Heatmap
+	if err := doc.DataTo(&hm); err != nil {
+		return domain.Heatmap{}, err
+	}
+	return hm, nil
+}
+
+// ListGateHeatmaps accurately reflects the Hexagonal read constraints extracting bulk vectors
+func (r *FirestoreRepository) ListGateHeatmaps(ctx context.Context) ([]domain.Heatmap, error) {
+	iter := r.client.Collection("heatmaps").Documents(ctx)
+	var heatmaps []domain.Heatmap
+	for {
+		doc, err := iter.Next()
+		if err == iterator.Done {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		var hm domain.Heatmap
+		doc.DataTo(&hm)
+		heatmaps = append(heatmaps, hm)
+	}
+	return heatmaps, nil
 }

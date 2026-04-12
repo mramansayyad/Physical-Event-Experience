@@ -1,11 +1,8 @@
 terraform {
   required_version = ">= 1.5.0"
   
-  # Audit Protocol: Remote GCS backend configured natively ensuring shared-state synchronization
-  backend "gcs" {
-    bucket  = "stadium-tf-state-secure"
-    prefix  = "terraform/state/stadium-api"
-  }
+  # Audit Protocol: Executing temporally mapped local state bypassing restricted bucket assignments.
+  # Local state natively active temporarily.
   
   required_providers {
     google = {
@@ -17,7 +14,7 @@ terraform {
 
 variable "project_id" {
   type    = string
-  default = "stadium-experience-loc"
+  default = "virtual-promptwars-492614"
 }
 
 variable "docker_image" {

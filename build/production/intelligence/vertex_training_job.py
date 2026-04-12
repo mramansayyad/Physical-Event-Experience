@@ -18,7 +18,7 @@ def extract_historical_features():
             PARTITION BY match_id, zone_id 
             ORDER BY TIMESTAMP_TRUNC(timestamp, MINUTE)
         ) as density_in_30_mins
-    FROM `stadium-experience-loc.analytics.telemetry_stream`
+    FROM `virtual-promptwars-492614.analytics.telemetry_stream`
     GROUP BY match_id, zone_id, timestamp
     """
     

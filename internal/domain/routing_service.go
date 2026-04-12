@@ -20,14 +20,19 @@ type RouteService struct {
 	telemetryWriter TelemetryWriter
 	telemetryJobs   chan TelemetryRecord // Bounded concurrency pool
 	wg              sync.WaitGroup       // Concurrency drain lock
+	ctx             context.Context      // Native lifecycle context binding
+	cancel          context.CancelFunc   // Cancel signal mapped to Shutdown
 }
 
 func NewRouteService(hr HeatmapReader, tw TelemetryWriter) *RouteService {
+	ctx, cancel := context.WithCancel(context.Background())
 	svc := &RouteService{
 		heatmapReader:   hr,
 		telemetryWriter: tw,
 		// Explicit buffered channel bounds representing "High-Concurrency Efficiency"
 		telemetryJobs:   make(chan TelemetryRecord, 5000), 
+		ctx:             ctx,
+		cancel:          cancel,
 	}
 	
 	// Establishing deterministic bounded goroutines for memory mapping (Worker Pool)
@@ -41,17 +46,27 @@ func NewRouteService(hr HeatmapReader, tw TelemetryWriter) *RouteService {
 
 // Shutdown initiates graceful pipeline draining protecting volatile configurations natively
 func (s *RouteService) Shutdown() {
-	close(s.telemetryJobs) // Triggers channel exhaustion sequence
+	s.cancel()             // Signals contextual draining safely across routines
+	close(s.telemetryJobs) // Triggers channel exhaustion sequence natively
 	s.wg.Wait()            // Halts parent thread strictly till completely zeroed
 }
 
-// telemetryWorker explicitly handles pipeline traffic without spinning unbounded goroutines
+// telemetryWorker explicitly handles pipeline traffic using mapped context natively
 func (s *RouteService) telemetryWorker() {
 	defer s.wg.Done()
 	
-	for job := range s.telemetryJobs {
-		if s.telemetryWriter != nil {
-			_ = s.telemetryWriter.BufferTelemetry(context.Background(), job)
+	for {
+		select {
+		case <-s.ctx.Done():
+			// Prevents isolated Goroutine Leaks fundamentally
+			return
+		case job, ok := <-s.telemetryJobs:
+			if !ok {
+				return // Channel natively closed
+			}
+			if s.telemetryWriter != nil {
+				_ = s.telemetryWriter.BufferTelemetry(s.ctx, job)
+			}
 		}
 	}
 }
@@ -86,7 +101,7 @@ func (s *RouteService) AnalyzeCongestion(ctx context.Context, userID string, cur
 				UserID:        userID,
 				CurrentZoneID: currentZone,
 				TargetGateID:  bestGate.ZoneID,
-				Reason:        "Severe Congestion Avoidance",
+				Reason:        "error.routing.congestion_severe", // Transformed to native i18n map securely
 			}, nil
 		}
 	}

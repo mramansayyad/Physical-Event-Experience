@@ -12,8 +12,8 @@ RUN go mod download && go mod verify
 
 COPY . .
 
-# Build the binary statically, stripping symbols to reduce size and obfuscate
-RUN go build -ldflags="-s -w" -o /stadium-backend ./cmd/api/*.go
+# Build the binary statically, stripping symbols and injecting LDFlags for version dynamically
+RUN go build -ldflags="-s -w -X 'main.Version=v1.1.0-SECURED'" -o /stadium-backend ./cmd/api/*.go
 
 # Final Stage (Distroless for Zero-Trust)
 # Uses a minimal base with NO shell or package managers.

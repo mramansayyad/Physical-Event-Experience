@@ -13,4 +13,4 @@ conditions:
           crossSeriesReducer: "REDUCE_SUM"
           perSeriesAligner: "ALIGN_COUNT"
 notificationChannels:
-  - "projects/stadium-experience-loc/notificationChannels/pagerduty-tier-1-eng"
+  - "projects/virtual-promptwars-492614/notificationChannels/pagerduty-tier-1-eng"

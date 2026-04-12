@@ -22,7 +22,7 @@ spec:
         - containerPort: 8080
         env:
         - name: GOOGLE_CLOUD_PROJECT
-          value: "stadium-experience-loc"
+          value: "virtual-promptwars-492614"
         # Database & Event configs
         - name: FIRESTORE_COLLECTION
           value: "heatmaps"

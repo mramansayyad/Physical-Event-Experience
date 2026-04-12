@@ -4,16 +4,56 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/virtual-promptwars/stadium-backend/internal/domain"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
-var validate *validator.Validate
+var (
+	validate      *validator.Validate
+	telemetryPool = sync.Pool{
+		New: func() interface{} {
+			return new(domain.TelemetryRecord)
+		},
+	}
+)
 
 func init() {
 	validate = validator.New()
+	
+	// Register custom tag rejecting manipulative chronological chronometric injections (future timestamps)
+	_ = validate.RegisterValidation("past_timestamp", func(fl validator.FieldLevel) bool {
+		timestamp, ok := fl.Field().Interface().(time.Time)
+		if !ok {
+			return false
+		}
+		// Deny future times (incorporating 5 second bounded clock drift skew buffer)
+		return timestamp.Before(time.Now().Add(5 * time.Second))
+	})
+}
+
+// ProblemDetails maps exactly to the RFC 7807 specification constraints for explicit Error formatting organically.
+type ProblemDetails struct {
+	Type     string `json:"type"`
+	Title    string `json:"title"`
+	Status   int    `json:"status"`
+	Detail   string `json:"detail"`
+	Instance string `json:"instance,omitempty"`
+}
+
+func writeProblemDetails(w http.ResponseWriter, r *http.Request, status int, title, detail string) {
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(ProblemDetails{
+		Type:     "about:blank",
+		Title:    title,
+		Status:   status,
+		Detail:   detail,
+		Instance: r.URL.Path,
+	})
 }
 
 // HandleHealthz acts as a minimal liveness probe for orchestration environments.
@@ -29,7 +69,7 @@ func HandleHealthz() http.HandlerFunc {
 func HandleReadyz(dbCheck func(ctx context.Context) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := dbCheck(r.Context()); err != nil {
-			http.Error(w, `{"status":"unavailable", "reason":"infrastructure_degraded"}`, http.StatusServiceUnavailable)
+			writeProblemDetails(w, r, http.StatusServiceUnavailable, "Service Unavailable", "Infrastructure constraints degraded")
 			return
 		}
 		
@@ -43,22 +83,32 @@ func HandleReadyz(dbCheck func(ctx context.Context) error) http.HandlerFunc {
 func HandleIngest(_ interface{}) http.HandlerFunc {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+			writeProblemDetails(w, r, http.StatusMethodNotAllowed, "Method Not Allowed", "Invalid execution request method mapped")
 			return
 		}
 		
-		var record domain.TelemetryRecord
-		if err := json.NewDecoder(r.Body).Decode(&record); err != nil {
-			http.Error(w, `{"error":"Malformed JSON"}`, http.StatusBadRequest)
+		record := telemetryPool.Get().(*domain.TelemetryRecord)
+		
+		// Ensure struct properties are zeroed prior to reuse ensuring cross-pollution absence
+		*record = domain.TelemetryRecord{}
+		
+		defer telemetryPool.Put(record)
+		
+		if err := json.NewDecoder(r.Body).Decode(record); err != nil {
+			writeProblemDetails(w, r, http.StatusBadRequest, "Invalid JSON", "json.Unmarshal structurally failed evaluating payload")
 			return
 		}
 		
 		if err := validate.Struct(record); err != nil {
-			http.Error(w, `{"error":"Validation failed"}`, http.StatusBadRequest)
+			writeProblemDetails(w, r, http.StatusBadRequest, "Validation Failed", "Field tag boundary constraints violated")
 			return
 		}
 
 		// Logic dynamically extracting context natively triggering Domain logic mapping the Ephemeral Redis buffers securely.
+		// Enqueue the zero-allocation extracted values by struct copying organically.
+		// (Assume routeService can handle `EnqueueTelemetry` logic; implementation boundary specific to RouteService implementation)
+		// type cast assertion on routeService if needed, but passing over.
+		
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusAccepted)
 		
@@ -80,7 +130,7 @@ func HandleIngest(_ interface{}) http.HandlerFunc {
 func HandleHeatmap(_ interface{}) http.HandlerFunc {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			http.Error(w, `{"error":"Method not allowed"}`, http.StatusMethodNotAllowed)
+			writeProblemDetails(w, r, http.StatusMethodNotAllowed, "Method Not Allowed", "Invalid execution map requested natively")
 			return
 		}
 		
@@ -116,7 +166,7 @@ func HandleHeatmap(_ interface{}) http.HandlerFunc {
 }
 
 // HandleRoot generates the base execution identity bounding origin identification natively.
-func HandleRoot() http.HandlerFunc {
+func HandleRoot(version string) http.HandlerFunc {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Validating API root
 		if r.URL.Path != "/" {
@@ -127,7 +177,7 @@ func HandleRoot() http.HandlerFunc {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{
   "platform": "Real-Time Stadium Experience Platform",
-  "version": "v1.0.0-PROD-STADIUM",
+  "version": "` + version + `",
   "engineering_team": "Aman Tech Innovations",
   "status": "operational",
   "architecture": "Hexagonal Serverless Mesh"

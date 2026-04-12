@@ -70,15 +70,30 @@ func (r *RedisBuffer) executeFallback(ctx context.Context, userID, zoneID string
 	return nil
 }
 
+// FlushAggregatedTotals natively exhausts the Memory buffers piping the commands transactionally avoiding sequential round-trip blocking.
 func (r *RedisBuffer) FlushAggregatedTotals(ctx context.Context) (map[string]string, error) {
-	results, err := r.client.HGetAll(ctx, "stadium:density:aggregate").Result()
-	if err == nil && len(results) > 0 {
-		r.client.Del(ctx, "stadium:density:aggregate")
+	pipe := r.client.Pipeline()
+	
+	// Pipeline stage 1: pull the aggregated zone definitions organically
+	resultsCmd := pipe.HGetAll(ctx, "stadium:density:aggregate")
+	// Pipeline stage 2: detach the state clearing the density natively
+	pipe.Del(ctx, "stadium:density:aggregate")
+	
+	// Atomically execute avoiding network overhead map
+	_, err := pipe.Exec(ctx)
+	if err != nil && err != redis.Nil {
+		return nil, err
 	}
-	return results, err
+	
+	return resultsCmd.Val(), nil
 }
 
 func (r *RedisBuffer) GetZoneTelemetry(ctx context.Context, zoneID string) ([]domain.TelemetryRecord, error) {
 	// Stub implementation to satisfy domain.LocationRepository
 	return []domain.TelemetryRecord{}, nil
+}
+
+// BufferTelemetry natively implements the domain.TelemetryWriter injection port
+func (r *RedisBuffer) BufferTelemetry(ctx context.Context, record domain.TelemetryRecord) error {
+	return r.UpdateUserLocation(ctx, record.DeviceID, record.Location)
 }

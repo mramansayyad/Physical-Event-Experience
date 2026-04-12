@@ -3,6 +3,7 @@ package domain
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestAnalyzeCongestion_TableDriven(t *testing.T) {
@@ -86,5 +87,36 @@ func TestPredictWaitTime_WeightedAverage(t *testing.T) {
 	
 	if prediction != 16 {
 		t.Errorf("Expected WaitTime of 16 mins, got %d", prediction)
+	}
+}
+
+func TestRouteService_GracefulShutdownAndRaceVerification(t *testing.T) {
+	// Initialize a mocked telemetry writer mapping pure Native boundaries natively
+	mockWriter := &MockTelemetryWriter{
+		BufferTelemetryFunc: func(ctx context.Context, record TelemetryRecord) error {
+			time.Sleep(1 * time.Millisecond) // Native sleep mimicking execution bounds
+			return nil
+		},
+	}
+	
+	svc := NewRouteService(nil, mockWriter)
+	
+	// Safely pipeline records bounding Memory exhaustion natively
+	for i := 0; i < 100; i++ {
+		svc.EnqueueTelemetry(TelemetryRecord{DeviceID: "sensor-x"})
+	}
+
+	// Trigger Shutdown validating wg blocks appropriately mapping memory leaks out
+	done := make(chan struct{})
+	go func() {
+		svc.Shutdown()
+		close(done)
+	}()
+
+	select {
+	case <-time.After(2 * time.Second):
+		t.Fatal("Shutdown deadlocked inherently bounding leaking routines")
+	case <-done:
+		// Safe exit.
 	}
 }

@@ -32,8 +32,8 @@ export default function () {
     },
   };
 
-  // Mock ingress triggering the telemetry pipeline boundary
-  const res = http.post('https://stadium-experience.internal.run/telemetry/ingest', payload, params);
+  // Mock ingress triggering the telemetry pipeline boundary natively
+  const res = http.post('http://127.0.0.1:8080/v1/telemetry/ingest', payload, params);
 
   check(res, {
     'is status 202': (r) => r.status === 202,
